@@ -113,6 +113,10 @@ func (fs *mockFileSystem) find(path string) (*mockFileData, error) {
 	return file, nil
 }
 
+func (fs *mockFileSystem) Getwd() (string, error) {
+	return fs.cwd, nil
+}
+
 func (fs *mockFileSystem) FileExists(path string) (bool, error) {
 	f, err := fs.find(fs.toAbs(path))
 	if err != nil {
@@ -170,6 +174,13 @@ func (fs *mockFileSystem) Create(name string) (File, error) {
 		mockFileData: file,
 		position:     0,
 	}, nil
+}
+
+func (fs *mockFileSystem) OpenFile(name string, flag int, perm os.FileMode) (File, error) {
+	if flag&os.O_CREATE == 0 {
+		return fs.Open(name)
+	}
+	return os.Create(name) // TODO: perm
 }
 
 func (fs *mockFileSystem) Mkdir(path string, perm os.FileMode) error {
