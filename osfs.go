@@ -10,30 +10,32 @@ func OsFs() FileSystem {
 	return osFilesystem{}
 }
 
+func (osFilesystem) Stat(name string) (os.FileInfo, error) {
+	return os.Stat(name)
+}
+
 func (osFilesystem) Getwd() (string, error) {
 	return os.Getwd()
 }
 
-func (osFilesystem) FileExists(file string) (bool, error) {
-	info, err := os.Stat(file)
-	if os.IsNotExist(err) {
-		return false, nil
-	}
-	if err != nil {
-		return false, err
-	}
-	return !info.IsDir(), nil
+func (osFilesystem) Chdir(dir string) error {
+	return os.Chdir(dir)
 }
 
-func (osFilesystem) DirExists(file string) (bool, error) {
-	info, err := os.Stat(file)
-	if os.IsNotExist(err) {
-		return false, nil
-	}
-	if err != nil {
-		return false, err
-	}
-	return info.IsDir(), nil
+func (osFilesystem) Chmod(name string, mode os.FileMode) error {
+	return os.Chmod(name, mode)
+}
+
+func (osFilesystem) Lstat(name string) (os.FileInfo, error) {
+	return os.Lstat(name)
+}
+
+func (osFilesystem) Readlink(name string) (string, error) {
+	return os.Readlink(name)
+}
+
+func (osFilesystem) Symlink(oldname, newname string) error {
+	return os.Symlink(oldname, newname)
 }
 
 func (osFilesystem) Open(name string) (File, error) {
@@ -56,8 +58,16 @@ func (osFilesystem) MkdirAll(path string, perm os.FileMode) error {
 	return os.MkdirAll(path, perm)
 }
 
+func (osFilesystem) Truncate(name string, size int64) error {
+	return os.Truncate(name, size)
+}
+
 func (osFilesystem) Remove(name string) error {
 	return os.Remove(name)
+}
+
+func (osFilesystem) RemoveAll(path string) error {
+	return os.RemoveAll(path)
 }
 
 func (osFilesystem) Rename(oldpath, newpath string) error {

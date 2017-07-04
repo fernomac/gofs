@@ -9,7 +9,7 @@ import (
 
 func testFileExists(t *testing.T, fs FileSystem, file string, expected bool) {
 	t.Run(fmt.Sprintf("FileExists('%v')", file), func(t *testing.T) {
-		exists, err := fs.FileExists(file)
+		exists, err := FileExists(fs, file)
 		if err != nil {
 			t.Fatalf("%v", err)
 		}
@@ -21,7 +21,7 @@ func testFileExists(t *testing.T, fs FileSystem, file string, expected bool) {
 
 func testDirExists(t *testing.T, fs FileSystem, dir string, expected bool) {
 	t.Run(fmt.Sprintf("DirExists('%v')", dir), func(t *testing.T) {
-		exists, err := fs.DirExists(dir)
+		exists, err := DirExists(fs, dir)
 		if err != nil {
 			t.Fatalf("%v", err)
 		}
