@@ -120,6 +120,10 @@ func (fs *mockFileSystem) Chdir(dir string) error {
 	return err
 }
 
+func (fs *mockFileSystem) Abs(path string) (string, error) {
+	return fs.toAbs(path), nil
+}
+
 func (fs *mockFileSystem) Chmod(name string, mode os.FileMode) error {
 	info, err := fs.stat(name)
 	if err != nil {

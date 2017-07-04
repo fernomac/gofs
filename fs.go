@@ -32,6 +32,8 @@ type FileSystem interface {
 	Getwd() (string, error)
 	Chdir(dir string) error
 
+	Abs(path string) (string, error)
+
 	Chmod(name string, mode os.FileMode) error
 
 	Lstat(name string) (os.FileInfo, error)

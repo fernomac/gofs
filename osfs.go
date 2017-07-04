@@ -1,6 +1,7 @@
 package gofs
 
 import "os"
+import "path/filepath"
 
 type osFilesystem struct {
 }
@@ -20,6 +21,10 @@ func (osFilesystem) Getwd() (string, error) {
 
 func (osFilesystem) Chdir(dir string) error {
 	return os.Chdir(dir)
+}
+
+func (osFilesystem) Abs(path string) (string, error) {
+	return filepath.Abs(path)
 }
 
 func (osFilesystem) Chmod(name string, mode os.FileMode) error {
