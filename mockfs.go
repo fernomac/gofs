@@ -2,7 +2,6 @@ package gofs
 
 import (
 	"errors"
-	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -53,12 +52,12 @@ func (fs *mockFileSystem) find(path string, deref bool) (*mockFileInfo, error) {
 		return nil, err
 	}
 	if !dirInfo.mode.IsDir() {
-		return nil, fmt.Errorf("'%v' is not a directory", dirPath)
+		return nil, os.ErrNotExist
 	}
 
 	info := dirInfo.children[filepath.Base(path)]
 	if info == nil {
-		return nil, fmt.Errorf("'%v' not found", path)
+		return nil, os.ErrNotExist
 	}
 
 	if deref {
@@ -74,8 +73,35 @@ func (fs *mockFileSystem) deref(info *mockFileInfo) (*mockFileInfo, error) {
 	return fs.find(string(info.data), true)
 }
 
+func (fs *mockFileSystem) findDir(op string, path string) (*mockFileInfo, error) {
+	info, err := fs.find(path, true)
+	if err != nil {
+		return nil, &os.PathError{
+			Op:   op,
+			Err:  err,
+			Path: path,
+		}
+	}
+	if !info.IsDir() {
+		return nil, &os.PathError{
+			Op:   op,
+			Err:  errors.New("not a directory"),
+			Path: path,
+		}
+	}
+	return info, nil
+}
+
 func (fs *mockFileSystem) stat(name string) (*mockFileInfo, error) {
-	return fs.find(fs.toAbs(name), true)
+	info, err := fs.find(fs.toAbs(name), true)
+	if err != nil {
+		return nil, &os.PathError{
+			Op:   "stat",
+			Err:  err,
+			Path: name,
+		}
+	}
+	return info, nil
 }
 
 func (fs *mockFileSystem) Stat(name string) (os.FileInfo, error) {
@@ -87,15 +113,11 @@ func (fs *mockFileSystem) Getwd() (string, error) {
 }
 
 func (fs *mockFileSystem) Chdir(dir string) error {
-	info, err := fs.Stat(dir)
-	if err != nil {
-		return err
+	_, err := fs.findDir("chdir", dir)
+	if err == nil {
+		fs.cwd = dir
 	}
-	if !info.IsDir() {
-		return errors.New("chdir: not a dir")
-	}
-	fs.cwd = dir
-	return nil
+	return err
 }
 
 func (fs *mockFileSystem) Chmod(name string, mode os.FileMode) error {
@@ -108,7 +130,15 @@ func (fs *mockFileSystem) Chmod(name string, mode os.FileMode) error {
 }
 
 func (fs *mockFileSystem) lstat(name string) (*mockFileInfo, error) {
-	return fs.find(fs.toAbs(name), false)
+	info, err := fs.find(fs.toAbs(name), false)
+	if err != nil {
+		return nil, &os.PathError{
+			Op:   "lstat",
+			Err:  err,
+			Path: name,
+		}
+	}
+	return info, nil
 }
 
 func (fs *mockFileSystem) Lstat(name string) (os.FileInfo, error) {
@@ -121,7 +151,11 @@ func (fs *mockFileSystem) Readlink(name string) (string, error) {
 		return "", err
 	}
 	if info.mode&os.ModeSymlink == 0 {
-		return "", errors.New("realink: not a symlink")
+		return "", &os.PathError{
+			Op:   "readlink",
+			Err:  errors.New("not a symlink"),
+			Path: name,
+		}
 	}
 	return string(info.data), nil
 }
@@ -131,17 +165,18 @@ func (fs *mockFileSystem) Symlink(oldname, newname string) error {
 	newAbs := fs.toAbs(newname)
 
 	dirPath, fileName := split(newAbs)
-	dirInfo, err := fs.find(dirPath, true)
+	dirInfo, err := fs.findDir("symlink", dirPath)
 	if err != nil {
 		return err
-	}
-	if !dirInfo.IsDir() {
-		return errors.New("symlink: not a directory")
 	}
 
 	info := dirInfo.children[fileName]
 	if info != nil {
-		return errors.New("symlink: already exists")
+		return &os.PathError{
+			Op:   "symlink",
+			Err:  os.ErrExist,
+			Path: newname,
+		}
 	}
 
 	info = &mockFileInfo{
@@ -159,21 +194,22 @@ func (fs *mockFileSystem) Mkdir(path string, perm os.FileMode) error {
 	abs := fs.toAbs(path)
 	dirPath, fileName := split(abs)
 
-	dirInfo, err := fs.find(dirPath, true)
+	dirInfo, err := fs.findDir("mkdir", dirPath)
 	if err != nil {
 		return err
-	}
-	if !dirInfo.IsDir() {
-		return fmt.Errorf("mkdir: parent '%v' exists but is not a directory", dirPath)
 	}
 
 	info := dirInfo.children[fileName]
 	if info != nil {
 		if info.IsDir() {
-			// Alread exists.
+			// Already exists.
 			return nil
 		}
-		return fmt.Errorf("mkdir: '%v' already exists but is not a directory", abs)
+		return &os.PathError{
+			Op:   "mkdir",
+			Err:  errors.New("exists but not a directory"),
+			Path: abs,
+		}
 	}
 
 	info = &mockFileInfo{
@@ -203,7 +239,11 @@ func (fs *mockFileSystem) doMkdirAll(path string, perm os.FileMode) (*mockFileIn
 			// Already exists and is a dir.
 			return info, nil
 		}
-		return nil, fmt.Errorf("mkdirall: '%v' exists but is not a directory", path)
+		return nil, &os.PathError{
+			Op:   "mkdirall",
+			Err:  errors.New("exists but not a directory"),
+			Path: path,
+		}
 	}
 
 	info = &mockFileInfo{
@@ -238,17 +278,18 @@ func (fs *mockFileSystem) OpenFile(name string, flag int, perm os.FileMode) (Fil
 		// The file must already exist.
 		info, err = fs.find(abs, true)
 		if err != nil {
-			return nil, err
+			return nil, &os.PathError{
+				Op:   "openfile",
+				Err:  err,
+				Path: name,
+			}
 		}
 	} else {
 		// We can create the file if needed.
 		dirPath, fileName := split(abs)
-		dirInfo, err := fs.find(dirPath, true)
+		dirInfo, err := fs.findDir("openfile", dirPath)
 		if err != nil {
 			return nil, err
-		}
-		if !dirInfo.IsDir() {
-			return nil, errors.New("openfile: not a directory")
 		}
 
 		info = dirInfo.children[fileName]
@@ -264,18 +305,30 @@ func (fs *mockFileSystem) OpenFile(name string, flag int, perm os.FileMode) (Fil
 		} else {
 			// It already exists.
 			if flag&os.O_EXCL == os.O_EXCL {
-				return nil, errors.New("openfile: already exists")
+				return nil, &os.PathError{
+					Op:   "openfile",
+					Err:  os.ErrExist,
+					Path: name,
+				}
 			}
 			// Handle symlinks.
 			info, err = fs.deref(info)
 			if err != nil {
-				return nil, err
+				return nil, &os.PathError{
+					Op:   "openfile",
+					Err:  err,
+					Path: name,
+				}
 			}
 		}
 	}
 
 	if !info.mode.IsRegular() {
-		return nil, errors.New("openfile: not a regular file")
+		return nil, &os.PathError{
+			Op:   "openfile",
+			Err:  errors.New("not a regular file"),
+			Path: name,
+		}
 	}
 
 	// Handle truncate and append flags.
@@ -305,22 +358,27 @@ func (fs *mockFileSystem) Truncate(name string, size int64) error {
 func (fs *mockFileSystem) Remove(name string) error {
 	dirPath, fileName := fs.toAbsSplit(name)
 
-	dirInfo, err := fs.find(dirPath, true)
+	dirInfo, err := fs.findDir("remove", dirPath)
 	if err != nil {
 		return err
-	}
-	if !dirInfo.IsDir() {
-		return fmt.Errorf("'%v' is not a directory", dirPath)
 	}
 
 	// Explicitly not following symlinks here; we want to delete the link.
 	info := dirInfo.children[fileName]
 	if info == nil {
-		return fmt.Errorf("remove: '%v' does not exist", name)
+		return &os.PathError{
+			Op:   "remove",
+			Err:  os.ErrNotExist,
+			Path: name,
+		}
 	}
 
 	if info.IsDir() && len(info.children) != 0 {
-		return fmt.Errorf("remove: '%v' is a non-empty directory", name)
+		return &os.PathError{
+			Op:   "remove",
+			Err:  errors.New("directory is not empty"),
+			Path: name,
+		}
 	}
 
 	delete(dirInfo.children, fileName)
@@ -342,13 +400,9 @@ func (fs *mockFileSystem) doRemoveAll(dirInfo *mockFileInfo, fileName string) {
 func (fs *mockFileSystem) RemoveAll(path string) error {
 	dirPath, fileName := fs.toAbsSplit(path)
 	dirInfo, err := fs.find(dirPath, true)
-	if err != nil {
-		return err
+	if err == nil && dirInfo.IsDir() {
+		fs.doRemoveAll(dirInfo, fileName)
 	}
-	if !dirInfo.IsDir() {
-		return errors.New("removeall: not a directory")
-	}
-	fs.doRemoveAll(dirInfo, fileName)
 	return nil
 }
 
@@ -356,28 +410,26 @@ func (fs *mockFileSystem) Rename(oldpath, newpath string) error {
 	oldDirPath, oldFileName := fs.toAbsSplit(oldpath)
 	newDirPath, newFileName := fs.toAbsSplit(newpath)
 
-	oldDirInfo, err := fs.find(oldDirPath, true)
+	oldDirInfo, err := fs.findDir("rename", oldDirPath)
 	if err != nil {
 		return err
-	}
-	if !oldDirInfo.IsDir() {
-		return fmt.Errorf("rename: '%v' is not a directory", oldDirPath)
-	}
-
-	newDirInfo := oldDirInfo
-	if oldDirPath != newDirPath {
-		newDirInfo, err = fs.find(newDirPath, true)
-		if err != nil {
-			return err
-		}
-		if !newDirInfo.IsDir() {
-			return fmt.Errorf("rename: '%v' is not a directory", newDirPath)
-		}
 	}
 
 	info := oldDirInfo.children[oldFileName]
 	if info == nil {
-		return fmt.Errorf("rename: '%v' not found", oldpath)
+		return &os.PathError{
+			Op:   "rename",
+			Err:  os.ErrNotExist,
+			Path: oldpath,
+		}
+	}
+
+	newDirInfo := oldDirInfo
+	if oldDirPath != newDirPath {
+		newDirInfo, err = fs.findDir("rename", newDirPath)
+		if err != nil {
+			return err
+		}
 	}
 
 	delete(oldDirInfo.children, oldFileName)
