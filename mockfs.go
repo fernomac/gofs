@@ -2,10 +2,16 @@ package gofs
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 )
+
+// DebugFs is a file system that can dump its state for debug purposes.
+type DebugFs interface {
+	Dump()
+}
 
 type mockFileSystem struct {
 	root mockFileInfo
@@ -18,6 +24,7 @@ func MockFs() FileSystem {
 		root: mockFileInfo{
 			name:     "/",
 			mode:     os.ModeDir | os.FileMode(0755),
+			parent:   nil,
 			children: make(map[string]*mockFileInfo),
 			data:     nil,
 		},
@@ -188,8 +195,9 @@ func (fs *mockFileSystem) Symlink(oldname, newname string) error {
 	}
 
 	info = &mockFileInfo{
-		name:     newAbs,
+		name:     fileName,
 		mode:     os.ModeSymlink | os.FileMode(0777),
+		parent:   dirInfo,
 		children: nil,
 		data:     []byte(oldAbs),
 	}
@@ -221,8 +229,9 @@ func (fs *mockFileSystem) Mkdir(path string, perm os.FileMode) error {
 	}
 
 	info = &mockFileInfo{
-		name:     abs,
+		name:     fileName,
 		mode:     os.ModeDir | (perm & os.ModePerm),
+		parent:   dirInfo,
 		children: make(map[string]*mockFileInfo),
 		data:     nil,
 	}
@@ -255,8 +264,9 @@ func (fs *mockFileSystem) doMkdirAll(path string, perm os.FileMode) (*mockFileIn
 	}
 
 	info = &mockFileInfo{
-		name:     path,
+		name:     fileName,
 		mode:     os.ModeDir | (perm & os.ModePerm),
+		parent:   dirInfo,
 		children: make(map[string]*mockFileInfo),
 		data:     nil,
 	}
@@ -304,8 +314,9 @@ func (fs *mockFileSystem) OpenFile(name string, flag int, perm os.FileMode) (Fil
 		if info == nil {
 			// Create a new one.
 			info = &mockFileInfo{
-				name:     abs,
+				name:     fileName,
 				mode:     (perm & os.ModePerm),
+				parent:   dirInfo,
 				children: nil,
 				data:     nil,
 			}
@@ -441,6 +452,21 @@ func (fs *mockFileSystem) Rename(oldpath, newpath string) error {
 	}
 
 	delete(oldDirInfo.children, oldFileName)
+	info.name = newFileName
+	info.parent = newDirInfo
 	newDirInfo.children[newFileName] = info
 	return nil
+}
+
+func dump(info *mockFileInfo) {
+	fmt.Println(info.Name())
+	if info.IsDir() {
+		for _, child := range info.children {
+			dump(child)
+		}
+	}
+}
+
+func (fs *mockFileSystem) Dump() {
+	dump(&fs.root)
 }
