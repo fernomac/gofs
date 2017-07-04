@@ -45,6 +45,9 @@ func (fs *mockFileSystem) find(path string, deref bool) (*mockFileInfo, error) {
 	if path == "" || path == "/" {
 		return &fs.root, nil
 	}
+	if !strings.HasPrefix(path, "/") {
+		return nil, errors.New("path is not absolute")
+	}
 
 	dirPath := filepath.Dir(path)
 	dirInfo, err := fs.find(dirPath, true)
@@ -113,9 +116,10 @@ func (fs *mockFileSystem) Getwd() (string, error) {
 }
 
 func (fs *mockFileSystem) Chdir(dir string) error {
-	_, err := fs.findDir("chdir", dir)
+	abs := fs.toAbs(dir)
+	_, err := fs.findDir("chdir", abs)
 	if err == nil {
-		fs.cwd = dir
+		fs.cwd = abs
 	}
 	return err
 }
