@@ -33,7 +33,7 @@ func (f *mockFile) Readdir(n int) ([]os.FileInfo, error) {
 
 	var ret []os.FileInfo
 	for _, v := range f.info.children {
-		if len(ret) >= n {
+		if n > 0 && len(ret) >= n {
 			break
 		}
 		ret = append(ret, v)

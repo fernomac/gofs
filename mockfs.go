@@ -340,14 +340,6 @@ func (fs *mockFileSystem) OpenFile(name string, flag int, perm os.FileMode) (Fil
 		}
 	}
 
-	if !info.mode.IsRegular() {
-		return nil, &os.PathError{
-			Op:   "openfile",
-			Err:  errors.New("not a regular file"),
-			Path: name,
-		}
-	}
-
 	// Handle truncate and append flags.
 	if flag&os.O_TRUNC == os.O_TRUNC {
 		info.data = nil

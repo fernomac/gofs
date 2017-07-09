@@ -76,12 +76,30 @@ func TestOpen(t *testing.T) {
 	f.Write([]byte("Hello World"))
 	f.Close()
 
-	testOpenFails(t, fs, "/")
 	testOpenFails(t, fs, "/bogus")
-	testOpenFails(t, fs, "/foo")
 	testOpenFails(t, fs, "/foo/bogus")
-	testOpenFails(t, fs, "/foo/bar/baz")
+	testOpenFails(t, fs, "/foo/bar/bogus")
 	testOpenFails(t, fs, "/foo/bar/baz/bogus")
+
+	t.Run("Open('/foo/bar/baz')", func(t *testing.T) {
+		f, err := fs.Open("/foo/bar/baz")
+		if err != nil {
+			t.Fatalf("Unexpected error from Open: %v", err)
+		}
+		defer f.Close()
+
+		infos, err := f.Readdir(-1)
+		if err != nil {
+			t.Fatalf("Unexpected error from Readdir: %v", err)
+		}
+
+		if len(infos) != 1 {
+			t.Fatalf("Unexpected number of files: %v", len(infos))
+		}
+		if infos[0].Name() != "hello" {
+			t.Fatalf("Unexpected name: %v", infos[0].Name())
+		}
+	})
 
 	t.Run("Open('/foo/bar/baz/hello')", func(t *testing.T) {
 		f, err := fs.Open("/foo/bar/baz/hello")
