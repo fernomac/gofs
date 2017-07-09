@@ -4,6 +4,7 @@ import (
 	"io"
 	"io/ioutil"
 	"os"
+	"sort"
 )
 
 // File is like os.File, but an interface.
@@ -96,4 +97,19 @@ func WriteFile(fs FileSystem, filename string, data []byte, perm os.FileMode) er
 		err = err1
 	}
 	return err
+}
+
+// ReadDir is like ioutil.ReadDir, but it takes a FileSystem.
+func ReadDir(fs FileSystem, dirname string) ([]os.FileInfo, error) {
+	f, err := fs.Open(dirname)
+	if err != nil {
+		return nil, err
+	}
+	list, err := f.Readdir(-1)
+	f.Close()
+	if err != nil {
+		return nil, err
+	}
+	sort.Slice(list, func(i, j int) bool { return list[i].Name() < list[j].Name() })
+	return list, nil
 }

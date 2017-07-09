@@ -32,7 +32,7 @@ func MockFs() FileSystem {
 	}
 }
 
-func (fs *mockFileSystem) toAbs(path string) string {
+func (fs *mockFileSystem) abs(path string) string {
 	if strings.HasPrefix(path, "/") {
 		return path
 	}
@@ -43,12 +43,11 @@ func split(path string) (string, string) {
 	return filepath.Dir(path), filepath.Base(path)
 }
 
-func (fs *mockFileSystem) toAbsSplit(path string) (string, string) {
-	abs := fs.toAbs(path)
-	return split(abs)
+func (fs *mockFileSystem) splitAbs(path string) (string, string) {
+	return split(fs.abs(path))
 }
 
-func (fs *mockFileSystem) find(path string, deref bool) (*mockFileInfo, error) {
+func (fs *mockFileSystem) find(path string) (*mockFileInfo, error) {
 	if path == "" || path == "/" {
 		return &fs.root, nil
 	}
@@ -57,7 +56,7 @@ func (fs *mockFileSystem) find(path string, deref bool) (*mockFileInfo, error) {
 	}
 
 	dirPath := filepath.Dir(path)
-	dirInfo, err := fs.find(dirPath, true)
+	dirInfo, err := fs.find(dirPath)
 	if err != nil {
 		return nil, err
 	}
@@ -70,21 +69,18 @@ func (fs *mockFileSystem) find(path string, deref bool) (*mockFileInfo, error) {
 		return nil, os.ErrNotExist
 	}
 
-	if deref {
-		return fs.deref(info)
-	}
-	return info, nil
+	return fs.deref(info)
 }
 
 func (fs *mockFileSystem) deref(info *mockFileInfo) (*mockFileInfo, error) {
 	if info.mode&os.ModeSymlink == 0 {
 		return info, nil
 	}
-	return fs.find(string(info.data), true)
+	return fs.find(string(info.data))
 }
 
 func (fs *mockFileSystem) findDir(op string, path string) (*mockFileInfo, error) {
-	info, err := fs.find(path, true)
+	info, err := fs.find(path)
 	if err != nil {
 		return nil, &os.PathError{
 			Op:   op,
@@ -103,7 +99,7 @@ func (fs *mockFileSystem) findDir(op string, path string) (*mockFileInfo, error)
 }
 
 func (fs *mockFileSystem) stat(name string) (*mockFileInfo, error) {
-	info, err := fs.find(fs.toAbs(name), true)
+	info, err := fs.find(fs.abs(name))
 	if err != nil {
 		return nil, &os.PathError{
 			Op:   "stat",
@@ -123,7 +119,7 @@ func (fs *mockFileSystem) Getwd() (string, error) {
 }
 
 func (fs *mockFileSystem) Chdir(dir string) error {
-	abs := fs.toAbs(dir)
+	abs := fs.abs(dir)
 	_, err := fs.findDir("chdir", abs)
 	if err == nil {
 		fs.cwd = abs
@@ -132,7 +128,7 @@ func (fs *mockFileSystem) Chdir(dir string) error {
 }
 
 func (fs *mockFileSystem) Abs(path string) (string, error) {
-	return fs.toAbs(path), nil
+	return fs.abs(path), nil
 }
 
 func (fs *mockFileSystem) Chmod(name string, mode os.FileMode) error {
@@ -145,14 +141,21 @@ func (fs *mockFileSystem) Chmod(name string, mode os.FileMode) error {
 }
 
 func (fs *mockFileSystem) lstat(name string) (*mockFileInfo, error) {
-	info, err := fs.find(fs.toAbs(name), false)
+	dirPath, fileName := fs.splitAbs(name)
+	dirInfo, err := fs.findDir("lstat", dirPath)
 	if err != nil {
+		return nil, err
+	}
+
+	info := dirInfo.children[fileName]
+	if info == nil {
 		return nil, &os.PathError{
 			Op:   "lstat",
-			Err:  err,
+			Err:  os.ErrNotExist,
 			Path: name,
 		}
 	}
+
 	return info, nil
 }
 
@@ -176,10 +179,7 @@ func (fs *mockFileSystem) Readlink(name string) (string, error) {
 }
 
 func (fs *mockFileSystem) Symlink(oldname, newname string) error {
-	oldAbs := fs.toAbs(oldname)
-	newAbs := fs.toAbs(newname)
-
-	dirPath, fileName := split(newAbs)
+	dirPath, fileName := fs.splitAbs(newname)
 	dirInfo, err := fs.findDir("symlink", dirPath)
 	if err != nil {
 		return err
@@ -199,7 +199,7 @@ func (fs *mockFileSystem) Symlink(oldname, newname string) error {
 		mode:     os.ModeSymlink | os.FileMode(0777),
 		parent:   dirInfo,
 		children: nil,
-		data:     []byte(oldAbs),
+		data:     []byte(fs.abs(oldname)),
 	}
 
 	dirInfo.children[fileName] = info
@@ -207,9 +207,7 @@ func (fs *mockFileSystem) Symlink(oldname, newname string) error {
 }
 
 func (fs *mockFileSystem) Mkdir(path string, perm os.FileMode) error {
-	abs := fs.toAbs(path)
-	dirPath, fileName := split(abs)
-
+	dirPath, fileName := fs.splitAbs(path)
 	dirInfo, err := fs.findDir("mkdir", dirPath)
 	if err != nil {
 		return err
@@ -224,7 +222,7 @@ func (fs *mockFileSystem) Mkdir(path string, perm os.FileMode) error {
 		return &os.PathError{
 			Op:   "mkdir",
 			Err:  errors.New("exists but not a directory"),
-			Path: abs,
+			Path: path,
 		}
 	}
 
@@ -275,7 +273,7 @@ func (fs *mockFileSystem) doMkdirAll(path string, perm os.FileMode) (*mockFileIn
 }
 
 func (fs *mockFileSystem) MkdirAll(path string, perm os.FileMode) error {
-	_, err := fs.doMkdirAll(fs.toAbs(path), perm)
+	_, err := fs.doMkdirAll(fs.abs(path), perm)
 	return err
 }
 
@@ -290,11 +288,11 @@ func (fs *mockFileSystem) Create(name string) (File, error) {
 func (fs *mockFileSystem) OpenFile(name string, flag int, perm os.FileMode) (File, error) {
 	var info *mockFileInfo
 	var err error
-	abs := fs.toAbs(name)
+	abs := fs.abs(name)
 
 	if flag&os.O_CREATE == 0 {
 		// The file must already exist.
-		info, err = fs.find(abs, true)
+		info, err = fs.find(abs)
 		if err != nil {
 			return nil, &os.PathError{
 				Op:   "openfile",
@@ -360,6 +358,7 @@ func (fs *mockFileSystem) OpenFile(name string, flag int, perm os.FileMode) (Fil
 	}
 
 	return &mockFile{
+		name:     name,
 		info:     info,
 		position: position,
 	}, nil
@@ -375,8 +374,7 @@ func (fs *mockFileSystem) Truncate(name string, size int64) error {
 }
 
 func (fs *mockFileSystem) Remove(name string) error {
-	dirPath, fileName := fs.toAbsSplit(name)
-
+	dirPath, fileName := fs.splitAbs(name)
 	dirInfo, err := fs.findDir("remove", dirPath)
 	if err != nil {
 		return err
@@ -417,8 +415,8 @@ func (fs *mockFileSystem) doRemoveAll(dirInfo *mockFileInfo, fileName string) {
 }
 
 func (fs *mockFileSystem) RemoveAll(path string) error {
-	dirPath, fileName := fs.toAbsSplit(path)
-	dirInfo, err := fs.find(dirPath, true)
+	dirPath, fileName := fs.splitAbs(path)
+	dirInfo, err := fs.find(dirPath)
 	if err == nil && dirInfo.IsDir() {
 		fs.doRemoveAll(dirInfo, fileName)
 	}
@@ -426,8 +424,8 @@ func (fs *mockFileSystem) RemoveAll(path string) error {
 }
 
 func (fs *mockFileSystem) Rename(oldpath, newpath string) error {
-	oldDirPath, oldFileName := fs.toAbsSplit(oldpath)
-	newDirPath, newFileName := fs.toAbsSplit(newpath)
+	oldDirPath, oldFileName := fs.splitAbs(oldpath)
+	newDirPath, newFileName := fs.splitAbs(newpath)
 
 	oldDirInfo, err := fs.findDir("rename", oldDirPath)
 	if err != nil {
@@ -458,15 +456,19 @@ func (fs *mockFileSystem) Rename(oldpath, newpath string) error {
 	return nil
 }
 
-func dump(info *mockFileInfo) {
-	fmt.Println(info.Name())
-	if info.IsDir() {
-		for _, child := range info.children {
-			dump(child)
+func dump(prefix string, info *mockFileInfo) {
+	for _, child := range info.children {
+		if child.IsDir() {
+			name := prefix + child.name + "/"
+			fmt.Println(name)
+			dump(name, child)
+		} else {
+			fmt.Println(prefix + child.name)
 		}
 	}
 }
 
 func (fs *mockFileSystem) Dump() {
-	dump(&fs.root)
+	fmt.Println("/")
+	dump("/", &fs.root)
 }

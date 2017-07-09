@@ -2,7 +2,6 @@ package gofs
 
 import (
 	"os"
-	"path/filepath"
 	"time"
 )
 
@@ -17,10 +16,7 @@ type mockFileInfo struct {
 }
 
 func (fi *mockFileInfo) Name() string {
-	if fi.parent == nil {
-		return fi.name
-	}
-	return filepath.Join(fi.parent.Name(), fi.name)
+	return fi.name
 }
 
 func (fi *mockFileInfo) Size() int64 {

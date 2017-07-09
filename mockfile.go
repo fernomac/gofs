@@ -8,12 +8,13 @@ import (
 
 // Mock implementation of the gofs.File interface.
 type mockFile struct {
+	name     string
 	info     *mockFileInfo
 	position int
 }
 
 func (f *mockFile) Name() string {
-	return f.info.Name()
+	return f.name
 }
 
 func (f *mockFile) Stat() (os.FileInfo, error) {
